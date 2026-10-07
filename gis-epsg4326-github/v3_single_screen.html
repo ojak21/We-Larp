@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>GIS Digitasi EPSG:4326</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:Inter,system-ui,sans-serif}
+body{height:100dvh;overflow:hidden;display:flex;flex-direction:column;background:#020617}
+#top{height:42px;background:#020617;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 12px;z-index:1000;flex-shrink:0;border-bottom:1px solid #1e293b}
+#top b{font-size:12px;letter-spacing:.06em}
+#gpsStatus{display:flex;align-items:center;gap:6px;font-size:11px;font-family:monospace}
+#dot{width:9px;height:9px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.25)}
+#dot.on{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.35)}
+#main{flex:1;position:relative;overflow:hidden;display:flex}
+#map{flex:1;width:100%;height:100%;background:#cbd5e1}
+.panel{position:absolute;background:rgba(255,255,255,.97);backdrop-filter:blur(10px);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.18);z-index:600;border:1px solid #e2e8f0}
+#panelForm{left:10px;top:10px;width:290px;padding:10px;display:flex;flex-direction:column;gap:8px}
+#panelTools{right:10px;top:10px;display:flex;flex-direction:column;gap:8px;padding:8px}
+#panelCtrl{left:10px;bottom:52px;padding:8px 10px;display:flex;gap:6px;align-items:center}
+#panelStats{left:50%;transform:translateX(-50%);bottom:52px;padding:8px 14px;display:flex;gap:16px;font-size:12px}
+label{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em}
+.inp{width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;outline:none}
+.inp:focus{border-color:#0ea5e9}
+.seg{display:flex;background:#f1f5f9;border-radius:8px;padding:2px}
+.seg button{flex:1;border:none;background:transparent;padding:6px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer}
+.seg button.active{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.chip{padding:5px 8px;border-radius:16px;border:1px solid #e2e8f0;font-size:10px;cursor:pointer;background:#fff;text-align:center}
+.chip.active{background:#0f172a;color:#fff;border-color:#0f172a}
+.btn{padding:9px 14px;border-radius:10px;border:none;font-weight:800;font-size:12px;cursor:pointer}
+.btn-green{background:#16a34a;color:#fff}
+.btn-red{background:#dc2626;color:#fff}
+.btn-dark{background:#0f172a;color:#fff}
+.btn-ghost{background:#f1f5f9;color:#334155}
+.iconBtn{width:38px;height:38px;border-radius:10px;border:1px solid #e2e8f0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px}
+#bottom{height:36px;background:#020617;color:#94a3b8;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:11px;font-family:monospace;flex-shrink:0;z-index:1000;border-top:1px solid #1e293b}
+#bottom b{color:#22c55e}
+#drawer{position:absolute;left:0;top:0;bottom:36px;width:300px;background:#fff;z-index:900;transform:translateX(-100%);transition:.25s;box-shadow:6px 0 30px rgba(0,0,0,.2);display:flex;flex-direction:column}
+#drawer.open{transform:translateX(0)}
+#drawer a{padding:14px 16px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;cursor:pointer}
+.modal{position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:1300;display:none;align-items:center;justify-content:center;padding:12px}
+.modal.open{display:flex}
+.modalBox{background:#fff;border-radius:16px;width:100%;max-width:520px;max-height:80vh;overflow:auto;padding:14px}
+@media(max-width:768px){#panelForm{width:calc(100% - 20px);max-height:52%;overflow:auto} #panelTools{top:auto;bottom:52px;right:10px;flex-direction:row}}
+</style>
+</head>
+<body>
+<div id="top"><div style="display:flex;gap:10px;align-items:center"><button id="btnMenu" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer">☰</button><b>DIGITASI • EPSG:4326 - WGS84</b></div><div id="gpsStatus"><span id="gpsTxt">GPS OFF</span><div id="dot"></div></div></div>
+<div id="main">
+<div id="map"></div>
+<div id="panelForm" class="panel">
+<div><label>ID Bidang</label><input id="idBidang" class="inp" value="P001"></div>
+<div><label>Penggunaan</label><select id="guna" class="inp"><option value="Sawah">🌾 Sawah</option><option value="Ladang">🌽 Ladang</option><option value="Kebun">🌳 Kebun</option><option value="Pekarangan">🏠 Pekarangan</option><option value="Kolam">💧 Kolam</option><option value="Lainnya">📍 Lainnya</option></select>
+<div style="display:flex;gap:4px;margin-top:5px"><div class="chip" data-g="Sawah">Sawah</div><div class="chip" data-g="Ladang">Ladang</div><div class="chip" data-g="Kebun">Kebun</div><div class="chip" data-g="Pekarangan">Pekar.</div><div class="chip" data-g="Kolam">Kolam</div></div></div>
+<div><label>Nama Pemilik</label><input id="nama" class="inp" placeholder="Nama"></div>
+<div><label>Metode Digitasi</label><div class="seg"><button id="mManual" class="active">✋ Manual Tap</button><button id="mGPS">📡 GPS Track</button></div></div>
+<div style="display:flex;gap:6px"><div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px"><span style="font-size:9px;color:#64748b">TITIK</span><b id="sTitik" style="display:block;font-size:14px">0</b></div><div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px"><span style="font-size:9px;color:#64748b">AKURASI</span><b id="sAkur" style="display:block;font-size:14px">-</b></div></div>
+</div>
+<div id="panelTools" class="panel">
+<button class="iconBtn" id="btnLoc" title="Lokasi Saya">📍</button>
+<button class="iconBtn" id="btnLayer" title="Layer">🗺️</button>
+<button class="iconBtn" id="btnInfo" title="Bantuan">❓</button>
+</div>
+<div id="panelCtrl" class="panel">
+<button id="btnMulai" class="btn btn-green">▶ MULAI</button>
+<button id="btnSelesai" class="btn btn-red" style="display:none">■ SELESAI</button>
+<button id="btnReset" class="btn btn-ghost">↺</button>
+<button id="btnSimpan" class="btn btn-dark">💾 SIMPAN</button>
+<span id="rec" style="display:none;font-size:10px;background:#fee2e2;color:#dc2626;padding:3px 8px;border-radius:10px;font-weight:800">● REC</span>
+</div>
+<div id="panelStats" class="panel">
+<div><span style="font-size:9px;color:#64748b">LUAS</span><b id="sLuas" style="font-size:13px">0 m²</b></div>
+<div><span style="font-size:9px;color:#64748b">KELILING</span><b id="sKel" style="font-size:13px">0 m</b></div>
+<div><span style="font-size:9px;color:#64748b">HA</span><b id="sHa" style="font-size:13px">0 ha</b></div>
+</div>
+<div id="drawer">
+<a onclick="openModal('listM')">📋 Daftar Bidang (<span id="cnt">0</span>)</a>
+<a onclick="exportGJ()">🌍 Ekspor GeoJSON EPSG:4326</a>
+<a onclick="openModal('tahapM')">🧪 Tahap Uji</a>
+<a onclick="openModal('setM')">⚙️ Pengaturan GPS</a>
+<a onclick="document.getElementById('drawer').classList.remove('open')">✕ Tutup</a>
+</div>
+</div>
+<div id="bottom"><span id="coord">EPSG:4326 • LAT: - • LON: - • ± -m</span><span><b id="luasB">Luas: 0 m²</b> | <span id="kelB">Kel: 0 m</span></span></div>
+
+<div id="listM" class="modal"><div class="modalBox"><div style="display:flex;justify-content:space-between"><h3>Daftar Bidang</h3><button onclick="closeM('listM')">✕</button></div><div id="listC" style="margin-top:10px"></div></div></div>
+<div id="tahapM" class="modal"><div class="modalBox"><div style="display:flex;justify-content:space-between"><h3>Tahap Uji Bertahap</h3><button onclick="closeM('tahapM')">✕</button></div><div style="font-size:13px;line-height:1.6;margin-top:8px">1. Komputer: Mode Manual → Mulai → klik A-B-C-D → Selesai.<br>2. HP: GPS dot hijau = aktif, titik biru otomatis muncul, mode GPS → Mulai → berjalan → Selesai.<br>3. Lapangan: A→B→C→D→A. Koordinat LAT LON live di bawah peta EPSG:4326, geotag timestamp auto tersimpan. Luas keliling otomatis WGS84 geodesic.</div></div></div>
+<div id="setM" class="modal"><div class="modalBox"><div style="display:flex;justify-content:space-between"><h3>Pengaturan</h3><button onclick="closeM('setM')">✕</button></div><div style="margin-top:10px"><label>Filter jarak GPS (m)</label><input id="distF" type="range" min="1" max="10" value="3" style="width:100%"><div id="distV">3 m</div><br><div style="font-family:monospace;background:#f1f5f9;padding:8px;border-radius:8px;font-size:11px">EPSG:4326 - WGS84<br>LatLon decimal degrees<br>Geotag: lat,lon,accuracy,time</div></div></div></div>
+
+<script>
+let map,pline,pgon,me,accC,pts=[],rec=false,mode='manual',lastPos=null;
+let colors={Sawah:'#22c55e',Ladang:'#eab308',Kebun:'#166534',Pekarangan:'#f97316',Kolam:'#0284c7',Lainnya:'#64748b'};
+let saved=JSON.parse(localStorage.getItem('gis4326')||'[]');
+function init(){
+  map=L.map('map',{zoomControl:false}).setView([-6.9175,107.6191],18);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22,attribution:'OSM | EPSG:4326'}).addTo(map);
+  L.control.zoom({position:'bottomright'}).addTo(map);
+  L.control.scale({imperial:false}).addTo(map);
+  pline=L.polyline([], {color:'#0ea5e9',weight:3,dashArray:'6 8'}).addTo(map);
+  pgon=L.polygon([], {color:'#020617',weight:2,fillColor:colors.Sawah,fillOpacity:0.3}).addTo(map);
+  me=L.circleMarker([0,0],{radius:9,color:'#fff',weight:2,fillColor:'#2563eb',fillOpacity:1}).addTo(map);
+  accC=L.circle([0,0],{radius:0,color:'#3b82f6',fillOpacity:0.12,weight:1}).addTo(map);
+  map.on('click',e=>{ if(mode==='manual'&&rec) addPt(e.latlng); });
+  map.on('mousemove',e=>{ if(!rec) document.getElementById('coord').innerText=`EPSG:4326 • LAT: ${e.latlng.lat.toFixed(6)} LON: ${e.latlng.lng.toFixed(6)} • Move`; });
+  setTimeout(()=>map.invalidateSize(),500);
+  startGPS(); updList();
+}
+function startGPS(){
+  if(!navigator.geolocation){document.getElementById('gpsTxt').innerText='NO GPS';return;}
+  navigator.geolocation.watchPosition(p=>{
+    const lat=p.coords.latitude,lng=p.coords.longitude,acc=p.coords.accuracy;
+    document.getElementById('dot').classList.add('on'); document.getElementById('gpsTxt').innerText=`GPS ON ±${Math.round(acc)}m`;
+    document.getElementById('sAkur').innerText=Math.round(acc)+'m';
+    me.setLatLng([lat,lng]); accC.setLatLng([lat,lng]).setRadius(acc);
+    if(!lastPos) map.setView([lat,lng],19);
+    lastPos=p;
+    const t=new Date().toLocaleTimeString('id-ID');
+    document.getElementById('coord').innerText=`EPSG:4326 • LAT: ${lat.toFixed(6)} LON: ${lng.toFixed(6)} • ±${acc.toFixed(1)}m • ${t}`;
+    if(rec && mode==='gps'){
+      const f=parseInt(document.getElementById('distF').value);
+      if(pts.length===0 || hav(pts[pts.length-1],{lat,lng})>=f) addPt({lat,lng,acc:acc,ts:Date.now()});
+    }
+  },()=>{document.getElementById('gpsTxt').innerText='GPS ERR';},{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
+}
+function hav(a,b){const R=6371000,dLat=(b.lat-a.lat)*Math.PI/180,dLng=(b.lng-a.lng)*Math.PI/180,la1=a.lat*Math.PI/180,la2=b.lat*Math.PI/180,x=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
+function geoArea(ll){let area=0,d2r=Math.PI/180;if(ll.length<3)return 0;for(let i=0;i<ll.length;i++){let p1=ll[i],p2=ll[(i+1)%ll.length];area+=(p2.lng-p1.lng)*d2r*(2+Math.sin(p1.lat*d2r)+Math.sin(p2.lat*d2r));}area=area*6378137*6378137/2;return Math.abs(area);}
+function addPt(l){pts.push({lat:l.lat,lng:l.lng,acc:l.acc||0,ts:l.ts||Date.now()}); pline.setLatLngs(pts); document.getElementById('sTitik').innerText=pts.length; if(pts.length>=3){const ar=geoArea(pts);let pe=0;for(let i=0;i<pts.length;i++)pe+=hav(pts[i],pts[(i+1)%pts.length]); document.getElementById('sLuas').innerText=Math.round(ar)+' m²'; document.getElementById('sKel').innerText=Math.round(pe)+' m'; document.getElementById('sHa').innerText=(ar/10000).toFixed(4)+' ha'; document.getElementById('luasB').innerText=`Luas: ${Math.round(ar)} m²`; document.getElementById('kelB').innerText=`Kel: ${Math.round(pe)} m`; pgon.setLatLngs(pts); pgon.setStyle({fillColor:colors[document.getElementById('guna').value]});} }
+document.getElementById('btnMulai').onclick=()=>{rec=true;pts=[];pline.setLatLngs([]);pgon.setLatLngs([]);document.getElementById('btnMulai').style.display='none';document.getElementById('btnSelesai').style.display='inline-block';document.getElementById('rec').style.display='inline';};
+document.getElementById('btnSelesai').onclick=()=>{rec=false;document.getElementById('btnMulai').style.display='inline-block';document.getElementById('btnSelesai').style.display='none';document.getElementById('rec').style.display='none';};
+document.getElementById('btnReset').onclick=()=>{rec=false;pts=[];pline.setLatLngs([]);pgon.setLatLngs([]);document.getElementById('sTitik').innerText='0';document.getElementById('sLuas').innerText='0 m²';document.getElementById('sKel').innerText='0 m';document.getElementById('sHa').innerText='0 ha';document.getElementById('btnMulai').style.display='inline-block';document.getElementById('btnSelesai').style.display='none';document.getElementById('rec').style.display='none';};
+document.getElementById('mManual').onclick=function(){mode='manual';this.classList.add('active');document.getElementById('mGPS').classList.remove('active');};
+document.getElementById('mGPS').onclick=function(){mode='gps';this.classList.add('active');document.getElementById('mManual').classList.remove('active');};
+document.getElementById('guna').onchange=e=>{pgon.setStyle({fillColor:colors[e.target.value]}); document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('active',c.dataset.g===e.target.value));};
+document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{document.getElementById('guna').value=c.dataset.g;document.getElementById('guna').dispatchEvent(new Event('change'));});
+document.getElementById('btnSimpan').onclick=()=>{
+  if(pts.length<3){alert('Minimal 3 titik');return;}
+  const id=document.getElementById('idBidang').value||'P001',nama=document.getElementById('nama').value,guna=document.getElementById('guna').value;
+  const ar=geoArea(pts);let pe=0;for(let i=0;i<pts.length;i++)pe+=hav(pts[i],pts[(i+1)%pts.length]);
+  saved.push({id,nama,guna,mode,points:pts,luas:ar,keliling:pe,created:new Date().toISOString(),epsg:'EPSG:4326'});
+  localStorage.setItem('gis4326',JSON.stringify(saved)); updList();
+  const num=parseInt(id.replace(/\D/g,''))||1; document.getElementById('idBidang').value='P'+String(num+1).padStart(3,'0');
+  document.getElementById('btnReset').click(); alert(`Tersimpan ${id} • ${guna} • ${Math.round(ar)} m²`);
+};
+function updList(){document.getElementById('cnt').innerText=saved.length; const c=document.getElementById('listC'); if(saved.length===0){c.innerHTML='<p style="color:#94a3b8;font-size:12px">Belum ada bidang</p>';return;} c.innerHTML=saved.map((s,i)=>`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between"><div><b>${s.id}</b> <span style="background:${colors[s.guna]};color:#fff;padding:2px 6px;border-radius:8px;font-size:10px">${s.guna}</span><br><span style="font-size:12px">${s.nama||'-'} • ${Math.round(s.luas)}m² • ${(s.luas/10000).toFixed(3)}ha</span><br><span style="font-size:10px;color:#64748b;font-family:monospace">${s.points.length} titik • ${new Date(s.created).toLocaleString('id-ID')}</span></div><button onclick="loadB(${i})" style="border:none;background:#f1f5f9;border-radius:8px;padding:6px 10px">Lihat</button></div>`).join('');}
+function loadB(i){const s=saved[i];pts=s.points;pline.setLatLngs(pts);pgon.setLatLngs(pts);pgon.setStyle({fillColor:colors[s.guna]});map.fitBounds(pgon.getBounds(),{padding:[20,20]});closeM('listM');document.getElementById('drawer').classList.remove('open');}
+function exportGJ(){if(saved.length===0){alert('Belum ada data');return;}const fc={type:'FeatureCollection',features:saved.map(s=>({type:'Feature',properties:{id:s.id,nama:s.nama,penggunaan:s.guna,luas_m2:Math.round(s.luas),keliling_m:Math.round(s.keliling),luas_ha:+(s.luas/10000).toFixed(4),epsg:'EPSG:4326-WGS84',created:s.created},geometry:{type:'Polygon',coordinates:[[ ...s.points.map(p=>[p.lng,p.lat]), [s.points[0].lng,s.points[0].lat] ]]}}))};const blob=new Blob([JSON.stringify(fc,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='bidang_EPSG4326_'+new Date().toISOString().slice(0,10)+'.geojson';a.click();}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeM(id){document.getElementById(id).classList.remove('open');}
+document.getElementById('btnMenu').onclick=()=>document.getElementById('drawer').classList.toggle('open');
+document.getElementById('btnLoc').onclick=()=>{if(lastPos) map.setView([lastPos.coords.latitude,lastPos.coords.longitude],19);};
+document.getElementById('btnLayer').onclick=()=>{alert('Layer: OSM default aktif. Untuk MBTiles/GeoTIFF, nanti kita tambah uploader di panel ini.');};
+document.getElementById('btnInfo').onclick=()=>openModal('tahapM');
+document.getElementById('distF').oninput=e=>document.getElementById('distV').innerText=e.target.value+' m';
+document.addEventListener('DOMContentLoaded',init);
+</script>
+</body>
+</html>

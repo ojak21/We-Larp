@@ -1,0 +1,17 @@
+
+{
+  "name": "GIS Digitasi EPSG:4326",
+  "short_name": "GIS Digitasi",
+  "description": "Digitasi bidang tanah sawah/ladang/kebun/pekarangan/kolam - EPSG:4326",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "icons": [
+    {
+      "src": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+      "sizes": "25x41",
+      "type": "image/png"
+    }
+  ]
+}

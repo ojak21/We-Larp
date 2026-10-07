@@ -1,0 +1,193 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Avenza Style - GIS EPSG4326</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system}
+body{height:100dvh;width:100vw;overflow:hidden;background:#cbd5e1;position:relative}
+#map{position:absolute;inset:0;z-index:1}
+/* Avenza Top Bar */
+#topbar{position:absolute;top:0;left:0;right:0;height:48px;background:rgba(15,23,42,0.88);backdrop-filter:blur(10px);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 12px;z-index:1000}
+#topbar b{font-size:13px;letter-spacing:.3px}
+#topbar span{font-size:10px;color:#94a3b8}
+#gpsStatus{display:flex;align-items:center;gap:6px;background:#00000066;padding:4px 10px;border-radius:20px}
+#dot{width:9px;height:9px;border-radius:50%;background:#ef4444}
+#dot.on{background:#22c55e;box-shadow:0 0 0 4px #22c55e44;animation:pulse 1.5s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 #22c55e88}70%{box-shadow:0 0 0 8px #22c55e00}100%{box-shadow:0 0 0 0 #22c55e00}}
+/* Crosshair Avenza */
+#cross{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:900;pointer-events:none}
+#cross::before,#cross::after{content:'';position:absolute;background:rgba(0,0,0,.6)}
+#cross::before{width:24px;height:2px;left:-12px;top:-1px}
+#cross::after{width:2px;height:24px;left:-1px;top:-12px}
+#cross div{width:6px;height:6px;border:2px solid #fff;position:absolute;left:-3px;top:-3px;box-sizing:border-box}
+/* Bottom Toolbar Avenza */
+#bottomBar{position:absolute;bottom:0;left:0;right:0;background:rgba(255,255,255,0.96);backdrop-filter:blur(12px);border-top:1px solid #e2e8f0;padding:8px 8px calc(8px + env(safe-area-inset-bottom));z-index:1000;display:flex;justify-content:space-around;align-items:center}
+.bbtn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px;border:none;background:none}
+.bbtn i{font-style:normal;font-size:22px;width:44px;height:44px;border-radius:14px;display:grid;place-items:center}
+.bbtn b{font-size:9px;color:#334155;letter-spacing:.2px}
+#btnRecord i{background:#16a34a;color:#fff;box-shadow:0 4px 12px #16a34a66}
+#btnRecord.rec i{background:#dc2626;animation:pulse 1s infinite}
+#btnPin i{background:#f1f5f9}
+#btnLayers i{background:#f1f5f9}
+/* Stats floating */
+#stats{position:absolute;top:60px;left:10px;background:rgba(255,255,255,0.95);padding:8px 12px;border-radius:12px;z-index:900;box-shadow:0 4px 16px rgba(0,0,0,.12);min-width:140px;display:none}
+#stats.on{display:block}
+#stats div{font-size:11px;color:#475569}
+#stats b{font-size:14px;color:#0f172a}
+/* Permission overlay */
+#perm{position:absolute;inset:0;background:#0f172aee;z-index:2000;display:grid;place-items:center;color:#fff;padding:24px;text-align:center}
+#perm.off{display:none}
+#perm button{margin-top:16px;padding:12px 20px;border-radius:12px;border:none;background:#22c55e;color:#fff;font-weight:800;font-size:14px;width:100%;max-width:260px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="cross"><div></div></div>
+<div id="topbar">
+<div><b>AVENZA • EPSG:4326</b><br><span id="coords">-6.9175, 107.6191 • ± - m</span></div>
+<div id="gpsStatus"><div id="dot"></div><span id="gpsTxt" style="font-size:11px;color:#fff">OFF</span></div>
+</div>
+<div id="stats"><div>TITIK: <b id="sT">0</b> • LUAS: <b id="sL">0 m²</b></div><div style="font-size:10px" id="sId">P001 • Sawah</div></div>
+<div id="bottomBar">
+<button class="bbtn" id="btnLayers"><i>🗺️</i><b>Layers</b></button>
+<button class="bbtn" id="btnRecord"><i id="recIcon">●</i><b id="recTxt">Record GPS</b></button>
+<button class="bbtn" id="btnPin"><i>📍</i><b>Pin</b></button>
+</div>
+<div id="perm">
+<div>
+<div style="font-size:40px">📡</div>
+<h2 style="margin:8px 0">Aktifkan GPS</h2>
+<p style="color:#94a3b8;font-size:13px;line-height:1.4">Aplikasi ini butuh akses lokasi.<br>Buka di Chrome, bukan dari WhatsApp.<br>Tekan tombol di bawah untuk mulai.</p>
+<button id="btnPerm">AKTIFKAN LOKASI & PETA</button>
+<p style="margin-top:12px;font-size:10px;color:#64748b">Jika tetap hitam, pastikan data internet aktif untuk load peta OSM.</p>
+</div>
+</div>
+<script>
+let map, me, acc, pl, pg, pts=[], rec=false, watchId=null;
+const colors={Sawah:'#22c55e',Ladang:'#eab308',Kebun:'#14532d',Pekarangan:'#f97316',Kolam:'#0ea5e9'};
+let idCounter=1, curGuna='Sawah';
+
+function initMap(lat=-6.9175,lng=107.6191){
+  map=L.map('map',{zoomControl:false, attributionControl:false}).setView([lat,lng],18);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+  L.control.zoom({position:'bottomright'}).addTo(map);
+  me=L.circleMarker([lat,lng],{radius:9,fillColor:'#2563eb',color:'#fff',weight:3,fillOpacity:1}).addTo(map);
+  acc=L.circle([lat,lng],{radius:0,color:'#3b82f6',fillColor:'#3b82f6',fillOpacity:0.15,weight:1}).addTo(map);
+  pl=L.polyline([], {color:'#0ea5e9',weight:4}).addTo(map);
+  pg=L.polygon([], {color:'#020617',weight:2,fillColor:colors[curGuna],fillOpacity:0.28}).addTo(map);
+  map.on('move', updateCoordCenter);
+  setTimeout(()=>map.invalidateSize(),500);
+}
+
+function updateCoordCenter(){
+  if(!map) return;
+  const c=map.getCenter();
+  document.getElementById('coords').innerText=c.lat.toFixed(6)+', '+c.lng.toFixed(6)+' • ±'+(window.lastAcc||'-')+' m';
+}
+
+function startGPS(){
+  if(!navigator.geolocation){ alert('GPS tidak support di viewer ini. Buka di Chrome.'); return; }
+  document.getElementById('perm').classList.add('off');
+  navigator.geolocation.getCurrentPosition(p=>{
+    const {latitude, longitude, accuracy}=p.coords;
+    window.lastAcc=Math.round(accuracy);
+    if(!map) initMap(latitude, longitude); else map.setView([latitude,longitude],19);
+    me.setLatLng([latitude,longitude]);
+    acc.setLatLng([latitude,longitude]).setRadius(accuracy);
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('gpsTxt').innerText='GPS • '+Math.round(accuracy)+'m';
+    updateCoordCenter();
+    startWatch();
+  }, err=>{
+    alert('Izin lokasi ditolak. Aktifkan Location di Chrome: tap ikon gembok di address bar > Location > Allow');
+    initMap();
+    document.getElementById('perm').classList.remove('off');
+  }, {enableHighAccuracy:false, timeout:12000});
+}
+
+function startWatch(){
+  if(watchId) navigator.geolocation.clearWatch(watchId);
+  watchId=navigator.geolocation.watchPosition(p=>{
+    const {latitude, longitude, accuracy}=p.coords;
+    window.lastAcc=Math.round(accuracy);
+    me.setLatLng([latitude,longitude]);
+    acc.setLatLng([latitude,longitude]).setRadius(accuracy);
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('gpsTxt').innerText='GPS • '+Math.round(accuracy)+'m';
+    if(rec){
+      const last=pts[pts.length-1];
+      const d= last ? map.distance([last.lat,last.lng],[latitude,longitude]) : 999;
+      if(d>=3) addPt({lat:latitude,lng:longitude});
+    }
+  }, null, {enableHighAccuracy:true, maximumAge:1000, timeout:20000});
+}
+
+function addPt(latlng){
+  pts.push(latlng);
+  pl.setLatLngs(pts);
+  pg.setLatLngs(pts);
+  pg.setStyle({fillColor:colors[curGuna]});
+  document.getElementById('stats').classList.add('on');
+  document.getElementById('sT').innerText=pts.length;
+  if(pts.length>=3){
+    const a=calcArea(pts);
+    document.getElementById('sL').innerText=Math.round(a)+' m²';
+  }
+}
+
+function calcArea(ll){
+  let area=0,d2r=Math.PI/180;
+  if(ll.length<3) return 0;
+  for(let i=0;i<ll.length;i++){
+    let p1=ll[i],p2=ll[(i+1)%ll.length];
+    area+=(p2.lng-p1.lng)*d2r*(2+Math.sin(p1.lat*d2r)+Math.sin(p2.lat*d2r));
+  }
+  return Math.abs(area*6378137*6378137/2);
+}
+
+document.getElementById('btnPerm').onclick=startGPS;
+document.getElementById('btnPin').onclick=()=>{
+  if(!map) return;
+  const c=map.getCenter();
+  addPt({lat:c.lat,lng:c.lng});
+};
+document.getElementById('btnRecord').onclick=()=>{
+  rec=!rec;
+  const btn=document.getElementById('btnRecord');
+  if(rec){
+    if(pts.length===0) document.getElementById('stats').classList.add('on');
+    btn.classList.add('rec');
+    document.getElementById('recTxt').innerText='Stop';
+    document.getElementById('recIcon').innerText='■';
+    document.getElementById('sId').innerText='P'+String(idCounter).padStart(3,'0')+' • '+curGuna+' • REC';
+  }else{
+    btn.classList.remove('rec');
+    document.getElementById('recTxt').innerText='Record GPS';
+    document.getElementById('recIcon').innerText='●';
+    if(pts.length>=3){
+      const a=calcArea(pts);
+      const data=JSON.parse(localStorage.getItem('avz')||'[]');
+      data.push({id:'P'+String(idCounter).padStart(3,'0'),guna:curGuna,pts,luas:a});
+      localStorage.setItem('avz',JSON.stringify(data));
+      idCounter++; pts=[]; pl.setLatLngs([]); pg.setLatLngs([]);
+      document.getElementById('sT').innerText='0';
+      alert('Tersimpan! Luas '+Math.round(a)+' m²');
+    }
+  }
+};
+document.getElementById('btnLayers').onclick=()=>{
+  const g=prompt('Ganti guna lahan? (Sawah/Ladang/Kebun/Pekarangan/Kolam)', curGuna);
+  if(g && colors[g]){ curGuna=g; pg.setStyle({fillColor:colors[g]}); document.getElementById('sId').innerText='P'+String(idCounter).padStart(3,'0')+' • '+g; }
+};
+
+// Auto init but show perm overlay
+initMap();
+document.getElementById('perm').classList.remove('off');
+</script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>GIS HP Lite - EPSG4326</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+body{height:100dvh;overflow:hidden;display:flex;flex-direction:column;background:#020617}
+#top{height:40px;background:#020617;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 10px;flex-shrink:0}
+#map{flex:1;background:#e2e8f0}
+#bottom{height:34px;background:#020617;color:#94a3b8;display:flex;align-items:center;padding:0 8px;font-size:10px;font-family:monospace;flex-shrink:0}
+.panel{position:absolute;left:8px;top:50px;background:#ffffffee;backdrop-filter:blur(6px);border-radius:12px;padding:8px;z-index:500;width:260px;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.btn{width:100%;padding:10px;border-radius:10px;border:none;font-weight:800;margin-top:6px}
+.btn-g{ background:#16a34a;color:#fff } .btn-r{ background:#dc2626;color:#fff } .btn-d{ background:#0f172a;color:#fff }
+.inp{width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;margin-top:2px}
+#gpsDot{width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block}
+#gpsDot.on{background:#22c55e;box-shadow:0 0 0 3px #22c55e55}
+</style>
+</head>
+<body>
+<div id="top"><b style="font-size:11px">GIS LITE • EPSG:4326</b><span style="font-size:10px"><span id="gpsDot"></span> <span id="gpsTxt">GPS OFF</span></span></div>
+<div id="map"></div>
+<div class="panel">
+<input id="idB" class="inp" value="P001" placeholder="ID">
+<select id="guna" class="inp"><option>Sawah</option><option>Ladang</option><option>Kebun</option><option>Pekarangan</option><option>Kolam</option></select>
+<div style="display:flex;gap:6px;margin-top:6px"><div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:4px;text-align:center"><div style="font-size:8px">TITIK</div><b id="nT">0</b></div><div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:4px;text-align:center"><div style="font-size:8px">LUAS</div><b id="nL">0</b></div></div>
+<button id="bMulai" class="btn btn-g">▶ MULAI MANUAL</button>
+<button id="bGps" class="btn" style="background:#e0f2fe">📡 MODE GPS TRACK</button>
+<button id="bSelesai" class="btn btn-r" style="display:none">■ SELESAI</button>
+<button id="bSimpan" class="btn btn-d">💾 SIMPAN</button>
+<button id="bReset" class="btn" style="background:#f1f5f9">↺ Reset</button>
+<div style="font-size:9px;color:#64748b;margin-top:6px">Tap peta untuk tambah titik. GPS akan aktif setelah izin lokasi. Tidak auto high-accuracy terus-menerus biar tidak hang.</div>
+</div>
+<div id="bottom"><span id="coord">LAT: - LON: -</span></div>
+<script>
+let map, pl, pg, me, acc, pts=[], rec=false, mode='manual', watchId=null, lastGps=null;
+const colors={Sawah:'#22c55e',Ladang:'#eab308',Kebun:'#166534',Pekarangan:'#f97316',Kolam:'#0284c7'};
+function init(){
+  map=L.map('map',{zoomControl:false, preferCanvas:true}).setView([-6.9175,107.6191],18);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'OSM'}).addTo(map);
+  pl=L.polyline([], {color:'#0ea5e9',weight:3}).addTo(map);
+  pg=L.polygon([], {color:'#020617',weight:1,fillColor:colors.Sawah,fillOpacity:0.25}).addTo(map);
+  me=L.circleMarker([0,0],{radius:8,fillColor:'#2563eb',color:'#fff',weight:2,fillOpacity:1}).addTo(map);
+  acc=L.circle([0,0],{radius:0,color:'#3b82f6',fillOpacity:0.1,weight:1}).addTo(map);
+  map.on('click', e=>{
+    if(mode==='manual' && rec){ addPt(e.latlng); }
+    document.getElementById('coord').innerText=`LAT:${e.latlng.lat.toFixed(6)} LON:${e.latlng.lng.toFixed(6)}`;
+  });
+  // Delay invalidate for HP
+  setTimeout(()=>{ map.invalidateSize(); }, 800);
+  // Ask GPS once, not watch forever
+  startGPSOnce();
+}
+function startGPSOnce(){
+  if(!navigator.geolocation){ document.getElementById('gpsTxt').innerText='No GPS'; return; }
+  // Get once
+  navigator.geolocation.getCurrentPosition(p=>{
+    updateGps(p);
+    map.setView([p.coords.latitude, p.coords.longitude],19);
+    document.getElementById('gpsDot').classList.add('on');
+    document.getElementById('gpsTxt').innerText='GPS READY';
+  }, err=>{
+    document.getElementById('gpsTxt').innerText='Izin lokasi?';
+  }, {enableHighAccuracy:false, timeout:10000});
+}
+function startWatch(){
+  if(watchId) navigator.geolocation.clearWatch(watchId);
+  watchId=navigator.geolocation.watchPosition(p=>{
+    updateGps(p);
+    if(rec && mode==='gps'){
+      const last=pts[pts.length-1];
+      const dist= last ? hav(last, {lat:p.coords.latitude, lng:p.coords.longitude}) : 999;
+      if(dist>=3){ addPt({lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy}); }
+    }
+  }, null, {enableHighAccuracy:true, maximumAge:2000, timeout:15000});
+}
+function stopWatch(){ if(watchId){ navigator.geolocation.clearWatch(watchId); watchId=null; } }
+function updateGps(p){
+  lastGps=p;
+  me.setLatLng([p.coords.latitude, p.coords.longitude]);
+  acc.setLatLng([p.coords.latitude, p.coords.longitude]).setRadius(p.coords.accuracy);
+  document.getElementById('coord').innerText=`EPSG:4326 • ${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)} ±${Math.round(p.coords.accuracy)}m`;
+}
+function hav(a,b){ const R=6371000,dLat=(b.lat-a.lat)*Math.PI/180,dLng=(b.lng-a.lng)*Math.PI/180,la1=a.lat*Math.PI/180,la2=b.lat*Math.PI/180; const x=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)**2; return 2*R*Math.asin(Math.sqrt(x)); }
+function geoArea(ll){ let area=0,d2r=Math.PI/180; if(ll.length<3) return 0; for(let i=0;i<ll.length;i++){ let p1=ll[i],p2=ll[(i+1)%ll.length]; area+=(p2.lng-p1.lng)*d2r*(2+Math.sin(p1.lat*d2r)+Math.sin(p2.lat*d2r)); } return Math.abs(area*6378137*6378137/2); }
+function addPt(l){ pts.push({lat:l.lat,lng:l.lng,acc:l.acc||0,ts:Date.now()}); pl.setLatLngs(pts); pg.setLatLngs(pts); document.getElementById('nT').innerText=pts.length; if(pts.length>=3){ const a=geoArea(pts); document.getElementById('nL').innerText=Math.round(a)+'m²'; pg.setStyle({fillColor:colors[document.getElementById('guna').value]||'#22c55e'}); } }
+document.getElementById('bMulai').onclick=()=>{ rec=true; pts=[]; pl.setLatLngs([]); pg.setLatLngs([]); document.getElementById('bMulai').style.display='none'; document.getElementById('bSelesai').style.display='block'; document.getElementById('nT').innerText='0'; };
+document.getElementById('bGps').onclick=()=>{ mode='gps'; document.getElementById('bGps').innerText='● MODE GPS AKTIF'; document.getElementById('bGps').style.background='#fee2e2'; startWatch(); if(!rec){ document.getElementById('bMulai').click(); } };
+document.getElementById('bSelesai').onclick=()=>{ rec=false; stopWatch(); document.getElementById('bMulai').style.display='block'; document.getElementById('bSelesai').style.display='none'; document.getElementById('bGps').innerText='📡 MODE GPS TRACK'; document.getElementById('bGps').style.background='#e0f2fe'; };
+document.getElementById('bReset').onclick=()=>{ rec=false; stopWatch(); pts=[]; pl.setLatLngs([]); pg.setLatLngs([]); document.getElementById('nT').innerText='0'; document.getElementById('nL').innerText='0'; document.getElementById('bMulai').style.display='block'; document.getElementById('bSelesai').style.display='none'; };
+document.getElementById('bSimpan').onclick=()=>{
+  if(pts.length<3){ alert('Minimal 3 titik'); return; }
+  const ar=geoArea(pts); const id=document.getElementById('idB').value;
+  const data=JSON.parse(localStorage.getItem('gisLite')||'[]');
+  data.push({id,guna:document.getElementById('guna').value,pts,luas:ar,ts:new Date().toISOString()});
+  localStorage.setItem('gisLite', JSON.stringify(data));
+  const n=parseInt(id.replace(/\D/g,''))||1; document.getElementById('idB').value='P'+String(n+1).padStart(3,'0');
+  alert('Simpan '+id+' '+Math.round(ar)+' m²'); document.getElementById('bReset').click();
+};
+document.addEventListener('DOMContentLoaded', init);
+window.addEventListener('resize', ()=>{ setTimeout(()=>map&&map.invalidateSize(), 300); });
+</script>
+</body>
+</html>
